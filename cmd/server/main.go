@@ -9,7 +9,9 @@ import (
 	"FreeTranslate/internal/api/translate"
 	"FreeTranslate/internal/platform/config"
 	"FreeTranslate/internal/platform/logs"
+	"FreeTranslate/internal/provider"
 	"FreeTranslate/internal/provider/tencent"
+	"FreeTranslate/internal/provider/volcano"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -28,30 +30,43 @@ func main() {
 		Compress:   true,
 		DirPath:    "logs",
 	})
-
-	// 3. 创建日志目录
 	os.MkdirAll("logs", os.ModePerm)
 
-	// 4. 初始化腾讯云翻译客户端
-	client, err := tencent.NewClient(
-		config.Config.TencentCloudSecretId,
-		config.Config.TencentCloudSecretKey,
-		config.Config.TencentCloudRegion,
-	)
-	if err != nil {
-		logs.Logger.Fatal("初始化腾讯云翻译客户端失败", zap.Error(err))
+	// 3. 初始化并注册 Provider
+	if config.Config.TencentEnabled {
+		client, err := tencent.NewClient(
+			config.Config.TencentCloudSecretId,
+			config.Config.TencentCloudSecretKey,
+		)
+		if err != nil {
+			logs.Logger.Fatal("初始化腾讯云翻译客户端失败", zap.Error(err))
+		}
+		provider.Register(client)
+		logs.Logger.Info("腾讯云翻译已启用", zap.String("name", client.Name()))
 	}
 
-	// 5. 初始化 handler
-	handler := translate.NewHandler(client)
+	if config.Config.VolcanoEnabled {
+		client := volcano.NewClient(
+			config.Config.VolcanoAccessKey,
+			config.Config.VolcanoSecretKey,
+		)
+		provider.Register(client)
+		logs.Logger.Info("火山引擎翻译已启用", zap.String("name", client.Name()))
+	}
 
-	// 6. 设置 Gin 模式
+	registered := provider.List()
+	logs.Logger.Info("已注册的 Provider", zap.Any("providers", registered))
+
+	// 4. 初始化 Handler（无需传 client，通过注册表获取）
+	handler := translate.NewHandler()
+
+	// 5. 设置 Gin 模式
 	gin.SetMode(config.Config.GinMode)
 
-	// 7. 设置路由
+	// 6. 设置路由
 	router := routes.Setup(handler)
 
-	// 8. 启动服务
+	// 7. 启动服务
 	addr := ":" + config.Config.Port
 	logs.Logger.Info("服务启动", zap.String("addr", addr))
 

@@ -1,15 +1,15 @@
 # FreeTranslate
 
-基于腾讯云 MPS 的文本翻译 API 服务，支持多种语言。
+免费翻译 API 聚合服务。支持多家服务商，默认腾讯云，开箱即用。
 
 ## 功能特性
 
-- 调用腾讯云 MPS `TextTranslation` 接口进行文本翻译
-- 支持 `auto` 自动检测源语言
-- 支持 200+ 种语言互译
-- 单次请求最大 2000 Unicode 字符
-- Bearer Token 鉴权
-- Zap 日志记录（含字符数、计费时长）
+- **多 Provider 支持**：腾讯云 MPS + 火山引擎，按需启用
+- **灵活路由**：通过 `provider` 参数指定或自动选择
+- **统一接口**：对外一个 API，内部自动适配各 Provider 的请求/响应格式
+- **Provider 插拔架构**：新增 Provider 只需实现接口 + 注册，无需改动核心代码
+- **Bearer Token 鉴权**
+- **Zap 日志**（含字符数、计费时长）
 
 ## 快速开始
 
@@ -21,11 +21,11 @@ go mod download
 
 ### 2. 配置
 
-复制 `.env.example` 为 `.env`，填入实际值：
-
 ```bash
 cp .env.example .env
 ```
+
+编辑 `.env` 填入各 Provider 的密钥，至少配置一个。
 
 ### 3. 启动
 
@@ -59,9 +59,10 @@ Content-Type: application/json
 
 | 字段 | 类型   | 必填 | 说明 |
 |------|--------|------|------|
-| `text` | string | ✅    | 待翻译文本，最大 2000 Unicode 字符 |
-| `source_lang` | string | ❌    | 源语言代码，默认 `auto`（自动检测） |
+| `text` | string | ✅    | 待翻译文本 |
+| `source_lang` | string | ❌    | 源语言代码（腾讯云支持 `auto`，火山引擎不支持） |
 | `target_lang` | string | ✅    | 目标语言代码 |
+| `provider` | string | ❌    | 指定 Provider，可选：`auto`（默认）、`tencent`、`volcano` |
 
 **响应示例：**
 
@@ -72,24 +73,17 @@ Content-Type: application/json
   "data": {
     "text": "你好，世界！",
     "source_lang": "en",
-    "target_lang": "zh"
+    "target_lang": "zh",
+    "provider": "tencent"
   }
 }
 ```
 
-**常用语言代码：**
+> ⚠️ 腾讯云与火山引擎的语言代码存在差异，使用前请参考各 Provider 的语言支持列表。
 
-| 代码 | 语言 | 代码 | 语言 |
-|------|------|------|------|
-| `zh` | 简体中文 | `en` | 英语 |
-| `zh-TW` | 中文繁体 | `ja` | 日语 |
-| `ko` | 韩语 | `fr` | 法语 |
-| `de` | 德语 | `es` | 西班牙语 |
-| `ru` | 俄语 | `ar` | 阿拉伯语 |
-| `th` | 泰语 | `vi` | 越南语 |
-| `yue` | 粤语 | `auto` | 自动检测 |
-
-完整语言代码列表请参考 [腾讯云文档](https://cloud.tencent.com/document/product/862/126431)。
+**语言支持：**
+- 腾讯云：https://cloud.tencent.com/document/product/862/126431
+- 火山引擎：https://docs.volcengine.com/docs/4640/65067
 
 **错误响应示例：**
 
@@ -97,112 +91,156 @@ Content-Type: application/json
 // 参数缺失
 {"code": 40001, "msg": "target_lang is required"}
 
-// 文本超长
+// 未知 provider
+{"code": 40010, "msg": "unknown provider: volcano, available: tencent, volcano"}
+
+// 文本超长（腾讯云 2000 / 火山引擎 5000）
 {"code": 42200, "msg": "text exceeds maximum length of 2000 characters"}
 
-// 腾讯云错误透传
-{"code": 50000, "msg": "translate error", "data": {"code": "UnsupportedOperation.TextTooLong", "message": "..."}}
+// Provider 错误透传
+{"code": 50000, "msg": "UnsupportedOperation.TextTooLong: ..."}
 ```
 
 ---
 
-## 腾讯云配置
+## 配置说明
 
-### 开通 MPS 服务
+### Provider 开关
 
-1. 登录 [腾讯云控制台](https://console.cloud.tencent.com/)
-2. 搜索 **媒体处理 MPS** → 进入产品页 → 点击 **立即开通**
-3. 按页面提示完成开通
+在 `.env` 中配置密钥即视为启用，也可以显式控制开关：
 
-### 获取密钥
+| Provider | 开关 | 说明 |
+|----------|------|------|
+| 腾讯云 | `TENCENTCLOUD_ENABLED=true` | `true`=启用（需同时配置密钥），`false`=禁用 |
+| 火山引擎 | `VOLCANO_ENABLED=false` | `true`=启用（需同时配置 AK/SK），`false`=禁用 |
 
-1. 进入 [访问密钥管理](https://console.cloud.tencent.com/cam/capi)
-2. 创建密钥对（SecretId + SecretKey）
-3. 将密钥填入 `.env`
+`provider` 参数指定具体 Provider，`auto` 或不传时按注册顺序选择。
+
+---
+
+## 腾讯云 MPS 文本翻译
+
+### 开通服务
+
+1. 登录 [腾讯云控制台 → 机器翻译](https://console.cloud.tencent.com/tmt)
+2. 点击 **立即开通**
+3. 获取 SecretId + SecretKey：[访问密钥管理](https://console.cloud.tencent.com/cam/capi)
 
 ### 子账户权限配置（CAM）
 
-如果使用子账户的密钥，需要给子账户授予 MPS 访问权限：
+若使用子账户密钥，需授予 MPS 权限：
 
-#### 方式一：使用预设策略（推荐用于开发测试）
+#### 方式一：预设策略（开发测试用）
 
-1. [CAM 控制台 → 用户](https://console.cloud.tencent.com/cam) → 选择你的子账户
-2. 点击 **添加权限**
-3. 搜索 `QcloudMPSFullAccess`，勾选并确认
+CAM → 用户 → 添加权限 → 搜索 `QcloudMPSFullAccess`
 
-#### 方式二：自定义最小权限策略（推荐用于生产环境）
+#### 方式二：最小权限策略（生产环境推荐）
 
-1. 进入 [CAM 控制台 → 策略](https://console.cloud.tencent.com/cam/policy)
-2. **创建策略** → **使用策略语法创建**
-3. 粘贴以下策略内容：
+1. [CAM → 策略](https://console.cloud.tencent.com/cam/policy) → **创建策略** → **使用策略语法创建**
+2. 填入：
 
 ```json
 {
   "version": "2.0",
-  "statement": [
+  "statement": [{
+    "effect": "allow",
+    "action": ["mps:TextTranslation"],
+    "resource": ["*"]
+  }]
+}
+```
+
+3. 关联到子账户
+
+详细说明：[媒体处理账号授权文档](https://cloud.tencent.com/document/product/862/117336)
+
+### 计费
+
+文档：[机器翻译计费概述](https://cloud.tencent.com/document/product/551/35017)
+
+---
+
+## 火山引擎机器翻译
+
+### 开通服务
+
+1. 登录 [火山引擎控制台 → 机器翻译](https://console.volcengine.com/translate)
+2. 点击 **立即开通**
+3. 获取 AccessKey + SecretKey：[密钥管理](https://console.volcengine.com/iam/keymanage)
+
+### 子账户权限配置（IAM）
+
+#### 方式一：系统预设策略（推荐开发测试用）
+
+1. [IAM → 身份管理 → 用户](https://console.volcengine.com/iam/identitymanage/user) → 选择子用户
+2. **权限** → **添加权限** → 搜索 `TranslateFullAccess` → 勾选 → 确认
+
+#### 方式二：最小权限策略（生产环境推荐）
+
+1. [IAM → 权限策略](https://console.volcengine.com/iam/policy) → **新建策略**
+2. 选择 **策略语法** → **空白模板**
+3. 填入以下内容，策略名称如 `Translate-TextTranslation`：
+
+```json
+{
+  "Version": "1",
+  "Statement": [
     {
-      "effect": "allow",
-      "action": [
-        "mps:TextTranslation"
+      "Effect": "Allow",
+      "Action": [
+        "translate:TranslateText"
       ],
-      "resource": ["*"]
+      "Resource": ["*"]
     }
   ]
 }
 ```
 
-4. 策略名称填写 `MPS-TextTranslation`，点击 **完成**
-5. 进入 [CAM 控制台 → 用户](https://console.cloud.tencent.com/cam)，关联该策略到你的子账户
+4. 保存后关联到子用户
 
-详细授权步骤请参考 [媒体处理账号授权文档](https://cloud.tencent.com/document/product/862/117336)。
+### 计费
+
+文档：[机器翻译产品计费](https://docs.volcengine.com/docs/4640/68515)
 
 ---
 
-## 计费说明
+## 项目结构
 
-### 计费方式
+```
+FreeTranslate/
+├── cmd/server/main.go                   # 入口，初始化 Provider 并注册
+├── .env / .env.example                  # 配置
+└── internal/
+    ├── api/
+    │   ├── middleware/auth.go           # Bearer Token 鉴权
+    │   ├── routes/router.go            # 路由
+    │   └── translate/handler.go         # 翻译接口（统一入口）
+    ├── platform/
+    │   ├── config/config.go             # .env 加载 + Provider 配置
+    │   ├── gwe/response.go             # 统一响应
+    │   └── logs/logger.go              # Zap 日志
+    └── provider/
+        ├── interface.go                 # Provider 接口定义
+        ├── registry.go                  # 注册表（全局 map）
+        ├── tencent/
+        │   └── client.go                # 腾讯云实现（SDK）
+        └── volcano/
+            └── client.go                # 火山引擎实现（SDK）
+```
 
-腾讯云 MPS `TextTranslation` 使用 **翻译字幕（附加语种）** 计费项：
+**新增 Provider 步骤：**
 
-- **计费单位**：人民币（元）/ 分钟
-- **换算规则**：每 **1100** Unicode 字符折算为 1 分钟
-- 字符数按 Unicode 码点统计（例如：`hello` 算 5 字符，`你好` 算 2 字符）
-- 按量计费价格：**0.2 元/分钟**（参考价格，以腾讯云实际定价为准）
-
-> ⚠️ 注意：腾讯云 MPS TextTranslation 属于**机器翻译**产品线，与独立的机器翻译服务（TMT）共享账户余额和计费体系。
-
-### 免费额度
-
-腾讯云机器翻译服务为每个账号提供以下免费额度：
-
-| 服务名称 | 免费额度 |
-|----------|----------|
-| 文本翻译 | **每月 500 万字符** |
-
-免费额度按月发放，当月首次开通后立即发放当月额度，仅当月有效。扣费优先级：**免费额度 → 预付费资源包 → 后付费**。
-
-详细免费额度说明：[腾讯云机器翻译计费概述](https://cloud.tencent.com/document/product/551/35017)。
-
-### 计费计算示例
-
-| 翻译文本 | Unicode 字符数 | 折算分钟 | 费用（元） |
-|----------|---------------|----------|-----------|
-| `Hello` | 5 | 0.0045 分钟 | ≈ 0.0009 元 |
-| `你好，世界！` | 6 | 0.0055 分钟 | ≈ 0.0011 元 |
-| 1000 字中文 | 1000 | 0.91 分钟 | ≈ 0.18 元 |
-| 2000 字中文 | 2000 | 1.82 分钟 | ≈ 0.36 元 |
-
-免费额度范围内（≤ 500万字符/月）**无需支付任何费用**。
-
-更多定价详情：[腾讯云 MPS 按量计费说明](https://cloud.tencent.com/document/product/862/36180)
+1. 在 `internal/provider/<name>/` 下实现 `client.go`，实现 `Provider` 接口
+2. 在 `main.go` 中 `NewClient` + `provider.Register()`
+3. 在 `.env` 添加开关和密钥
+4. 在 `config.go` 添加配置读取
 
 ---
 
 ## 相关链接
 
-- 腾讯云 MPS 官方文档：https://cloud.tencent.com/document/product/862
-- 文本翻译 API 文档：https://cloud.tencent.com/document/product/862/126431
-- 机器翻译计费概述：https://cloud.tencent.com/document/product/551/35017
-- MPS 按量计费说明：https://cloud.tencent.com/document/product/862/36180
-- CAM 授权文档：https://cloud.tencent.com/document/product/862/117336
-- 腾讯云控制台：https://console.cloud.tencent.com/
+**腾讯云：**
+- [MPS 官方文档](https://cloud.tencent.com/document/product/862) | [文本翻译 API](https://cloud.tencent.com/document/product/862/126431) | [机器翻译计费概述](https://cloud.tencent.com/document/product/551/35017) | [CAM 授权](https://cloud.tencent.com/document/product/862/117336)
+
+**火山引擎：**
+- [机器翻译文档](https://docs.volcengine.com/docs/4640/62099) | [文本翻译 API](https://docs.volcengine.com/docs/4640/65067) | [产品计费](https://docs.volcengine.com/docs/4640/68515)
