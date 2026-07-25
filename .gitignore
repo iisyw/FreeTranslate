@@ -1,0 +1,33 @@
+# 环境配置（包含密钥，禁止提交）
+.env
+
+# 二进制
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+freetranslate
+freetranslate-bin
+
+# 测试二进制
+/tmp/freetranslate
+/tmp/freetranslate-*
+
+# 日志
+logs/
+*.log
+
+# Go
+__debug_bin
+debug
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Swagger 文档（可选）
+docs/
