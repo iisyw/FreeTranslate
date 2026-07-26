@@ -264,6 +264,7 @@ FreeTranslate/
             2. 在 `main.go` 中 `NewClient` + `provider.Register()`
             3. 在 `.env` 添加开关和密钥
             4. 在 `config.go` 添加配置读取
+```
 
 ---
 
