@@ -15,7 +15,7 @@ freetranslate-bin
 /tmp/freetranslate-*
 
 # 日志
-logs/
+/logs/
 *.log
 
 # Go
