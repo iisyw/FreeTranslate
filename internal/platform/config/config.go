@@ -10,8 +10,8 @@ import (
 var Config AppConfig
 
 type AppConfig struct {
-	Port    string
-	GinMode string
+	Port     string
+	GinMode  string
 	APIToken string
 
 	// 腾讯云
@@ -23,6 +23,11 @@ type AppConfig struct {
 	VolcanoEnabled   bool
 	VolcanoAccessKey string
 	VolcanoSecretKey string
+
+	// 阿里云
+	AlibabaEnabled   bool
+	AlibabaAccessKey string
+	AlibabaSecretKey string
 }
 
 func Init() {
@@ -37,10 +42,13 @@ func Init() {
 	volcanoEnabled := getEnv("VOLCANO_ENABLED", "false")
 	volcanoKey := getEnv("VOLCANO_SECRET_KEY", "")
 	volcanoAk := getEnv("VOLCANO_ACCESS_KEY", "")
+	alibabaEnabled := getEnv("ALIBABA_ENABLED", "false")
+	alibabaAk := getEnv("ALIBABA_ACCESS_KEY", "")
+	alibabaSk := getEnv("ALIBABA_SECRET_KEY", "")
 
 	Config = AppConfig{
-		Port:    getEnv("PORT", "8000"),
-		GinMode: getEnv("GIN_MODE", "debug"),
+		Port:     getEnv("PORT", "8000"),
+		GinMode:  getEnv("GIN_MODE", "debug"),
 		APIToken: getEnv("API_TOKEN", ""),
 
 		TencentEnabled:      tencentEnabled == "true" && tencentId != "" && tencentKey != "",
@@ -50,6 +58,10 @@ func Init() {
 		VolcanoEnabled:   volcanoEnabled == "true" && volcanoKey != "" && volcanoAk != "",
 		VolcanoAccessKey: volcanoAk,
 		VolcanoSecretKey: volcanoKey,
+
+		AlibabaEnabled:   alibabaEnabled == "true" && alibabaAk != "" && alibabaSk != "",
+		AlibabaAccessKey: alibabaAk,
+		AlibabaSecretKey: alibabaSk,
 	}
 
 	if Config.APIToken == "" {
@@ -57,9 +69,9 @@ func Init() {
 	}
 
 	// 至少要启用一个 provider
-	hasProvider := Config.TencentEnabled || Config.VolcanoEnabled
+	hasProvider := Config.TencentEnabled || Config.VolcanoEnabled || Config.AlibabaEnabled
 	if !hasProvider {
-		log.Fatal("[config] 至少需要启用一个翻译服务（腾讯云或火山引擎）")
+		log.Fatal("[config] 至少需要启用一个翻译服务（腾讯云、火山引擎或阿里云）")
 	}
 }
 

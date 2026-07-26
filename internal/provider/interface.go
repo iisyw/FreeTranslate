@@ -27,6 +27,10 @@ type Provider interface {
 	// Translate 执行翻译
 	Translate(ctx context.Context, req Request) (*Result, error)
 
+	// TranslateBatch 批量翻译（不支持则返回错误，由调用方降级为并发单次）
+	// 每个元素的 error 也会单独返回，不阻塞其他元素
+	TranslateBatch(ctx context.Context, reqs []Request) ([]*Result, []error)
+
 	// MaxTextLen 最大文本长度限制（Unicode 字符）
 	MaxTextLen() int
 

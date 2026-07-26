@@ -59,9 +59,12 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 		return nil, errors.New("empty response from Tencent Cloud")
 	}
 
-	result := &provider.Result{
-		SourceLang: *resp.Response.Source,
-		TargetLang: *resp.Response.Target,
+	result := &provider.Result{}
+	if resp.Response.Source != nil {
+		result.SourceLang = *resp.Response.Source
+	}
+	if resp.Response.Target != nil {
+		result.TargetLang = *resp.Response.Target
 	}
 	if resp.Response.TargetText != nil {
 		result.Text = *resp.Response.TargetText
@@ -73,8 +76,24 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 }
 
 func (c *Client) IsTextTooLongError(err error) bool {
+	if err == nil {
+		return false
+	}
 	return strings.Contains(err.Error(), "TextTooLong") ||
 		strings.Contains(err.Error(), "UnsupportedOperation")
+}
+
+// TranslateBatch 腾讯云 MPS 不支持真正的批量翻译，每次只能翻一条
+// 实现：遍历调用 Translate，单次失败不影响其他
+func (c *Client) TranslateBatch(ctx context.Context, reqs []provider.Request) ([]*provider.Result, []error) {
+	results := make([]*provider.Result, len(reqs))
+	errs := make([]error, len(reqs))
+	for i, req := range reqs {
+		result, err := c.Translate(ctx, req)
+		results[i] = result
+		errs[i] = err
+	}
+	return results, errs
 }
 
 func parseError(err error) error {

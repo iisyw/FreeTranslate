@@ -25,6 +25,7 @@ func Setup(handler *translate.Handler) *gin.Engine {
 	v1.Use(middleware.AuthToken())
 	{
 		v1.POST("/translate", handler.Translate)
+		v1.POST("/translate/batch", handler.TranslateBatch)
 	}
 
 	return r

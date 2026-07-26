@@ -10,6 +10,7 @@ import (
 	"FreeTranslate/internal/platform/config"
 	"FreeTranslate/internal/platform/logs"
 	"FreeTranslate/internal/provider"
+	"FreeTranslate/internal/provider/alibaba"
 	"FreeTranslate/internal/provider/tencent"
 	"FreeTranslate/internal/provider/volcano"
 
@@ -52,6 +53,19 @@ func main() {
 		)
 		provider.Register(client)
 		logs.Logger.Info("火山引擎翻译已启用", zap.String("name", client.Name()))
+	}
+
+	if config.Config.AlibabaEnabled {
+		client, err := alibaba.NewClient(
+			config.Config.AlibabaAccessKey,
+			config.Config.AlibabaSecretKey,
+		)
+		if err != nil {
+			logs.Logger.Fatal("初始化阿里云翻译客户端失败", zap.Error(err))
+		}
+
+		provider.Register(client)
+		logs.Logger.Info("阿里云翻译已启用", zap.String("name", client.Name()))
 	}
 
 	registered := provider.List()
