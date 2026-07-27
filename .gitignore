@@ -31,3 +31,5 @@ debug
 
 # Swagger 文档（可选）
 docs/
+
+build/

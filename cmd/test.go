@@ -70,10 +70,10 @@ func main() {
 	// 腾讯云
 	section("腾讯云 TMT")
 	run("单条翻译(en→zh)", true, func() (bool, string, string) {
-		return translate(opts, "tencent", "Hello world", "en", "zh")
+		return translate(opts, "tencent", "Good morning", "", "zh")
 	})
 	run("单条翻译(zh→en)", true, func() (bool, string, string) {
-		return translate(opts, "tencent", "你好世界", "zh", "en")
+		return translate(opts, "tencent", "早上好", "zh", "en")
 	})
 	run("zh-CN 归一化(target)", true, func() (bool, string, string) {
 		return translate(opts, "tencent", "Hello world", "", "zh-CN")

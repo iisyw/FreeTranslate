@@ -30,9 +30,9 @@ cp .env.example .env
 ### 3. 启动
 
 ```bash
-go run ./cmd/server
+go run .
 # 或编译后运行
-go build -o freetranslate ./cmd/server && ./freetranslate
+go build -o freetranslate . && ./freetranslate
 ```
 
 服务默认监听 `:8000`，可通过 `PORT` 环境变量修改。
@@ -234,7 +234,7 @@ FreeTranslate 当前接入的是**通用版**（`alibaba-general`）。如需场
 
 ```
 FreeTranslate/
-├── cmd/server/main.go                   # 入口，初始化 Provider 并注册
+├── main.go                               # 入口，初始化 Provider 并注册
 ├── .env / .env.example                  # 配置
 └── internal/
     ├── api/
