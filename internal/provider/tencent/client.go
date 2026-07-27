@@ -10,13 +10,13 @@ import (
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
-	mps "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mps/v20190612"
+	tmt "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tmt/v20180321"
 )
 
 const name = "tencent"
 
 type Client struct {
-	client *mps.Client
+	client *tmt.Client
 }
 
 func NewClient(secretId, secretKey string) (*Client, error) {
@@ -24,7 +24,7 @@ func NewClient(secretId, secretKey string) (*Client, error) {
 	cpf.HttpProfile.ReqTimeout = 30
 
 	credential := common.NewCredential(secretId, secretKey)
-	client, err := mps.NewClient(credential, "", cpf)
+	client, err := tmt.NewClient(credential, "ap-guangzhou", cpf)
 	if err != nil {
 		return nil, err
 	}
@@ -39,24 +39,24 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 		return nil, errors.New("text exceeds maximum length")
 	}
 
-	// source_lang 为空时默认 auto
 	sourceLang := req.SourceLang
 	if sourceLang == "" {
 		sourceLang = "auto"
 	}
 
-	mpsReq := mps.NewTextTranslationRequest()
-	mpsReq.SourceText = &req.Text
-	mpsReq.Source = &sourceLang
-	mpsReq.Target = &req.TargetLang
+	tmtReq := tmt.NewTextTranslateRequest()
+	tmtReq.SourceText = &req.Text
+	tmtReq.Source = &sourceLang
+	tmtReq.Target = &req.TargetLang
+	tmtReq.ProjectId = common.Int64Ptr(0)
 
-	resp, err := c.client.TextTranslationWithContext(ctx, mpsReq)
+	resp, err := c.client.TextTranslateWithContext(ctx, tmtReq)
 	if err != nil {
 		return nil, parseError(err)
 	}
 
 	if resp.Response == nil {
-		return nil, errors.New("empty response from Tencent Cloud")
+		return nil, errors.New("empty response from Tencent Cloud TMT")
 	}
 
 	result := &provider.Result{}
@@ -83,15 +83,12 @@ func (c *Client) IsTextTooLongError(err error) bool {
 		strings.Contains(err.Error(), "UnsupportedOperation")
 }
 
-// TranslateBatch 腾讯云 MPS 不支持真正的批量翻译，每次只能翻一条
-// 实现：遍历调用 Translate，单次失败不影响其他
+// TranslateBatch 逐条调用 Translate
 func (c *Client) TranslateBatch(ctx context.Context, reqs []provider.Request) ([]*provider.Result, []error) {
 	results := make([]*provider.Result, len(reqs))
 	errs := make([]error, len(reqs))
 	for i, req := range reqs {
-		result, err := c.Translate(ctx, req)
-		results[i] = result
-		errs[i] = err
+		results[i], errs[i] = c.Translate(ctx, req)
 	}
 	return results, errs
 }

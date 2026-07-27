@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **多 Provider 支持**：腾讯云 MPS + 火山引擎 + 阿里云机器翻译，按需启用
+- **多 Provider 支持**：腾讯云 TMT + 火山引擎 + 阿里云机器翻译，按需启用
 - **灵活路由**：通过 `provider` 参数指定或自动选择
 - **统一接口**：对外一个 API，内部自动适配各 Provider 的请求/响应格式
 - **Provider 插拔架构**：新增 Provider 只需实现接口 + 注册，无需改动核心代码
@@ -160,7 +160,7 @@ Content-Type: application/json
 
 ---
 
-## 腾讯云 MPS 文本翻译
+## 腾讯云 TMT 文本翻译
 
 ### 开通服务
 
@@ -170,11 +170,11 @@ Content-Type: application/json
 
 ### 子账户权限配置（CAM）
 
-若使用子账户密钥，需授予 MPS 权限：
+若使用子账户密钥，需授予 TMT 权限：
 
-[CAM → 用户](https://console.cloud.tencent.com/cam/user) → 选择子用户 → **添加权限** → 搜索 `QcloudMPSFullAccess` → 关联
+[CAM → 用户](https://console.cloud.tencent.com/cam/user) → 选择子用户 → **添加权限** → 搜索 `QcloudTMTFullAccess` → 关联
 
-详细说明：[媒体处理账号授权文档](https://cloud.tencent.com/document/product/862/117336)
+详细说明：[TMT 授权文档](https://cloud.tencent.com/document/product/551/52612)
 
 ### 计费
 
@@ -271,7 +271,7 @@ FreeTranslate/
 ## 相关链接
 
 **腾讯云：**
-- [MPS 官方文档](https://cloud.tencent.com/document/product/862) | [文本翻译 API](https://cloud.tencent.com/document/product/862/126431) | [机器翻译计费概述](https://cloud.tencent.com/document/product/551/35017) | [CAM 授权](https://cloud.tencent.com/document/product/862/117336)
+- [TMT 官方文档](https://cloud.tencent.com/document/product/551) | [文本翻译 API](https://cloud.tencent.com/document/product/551/52610) | [机器翻译计费概述](https://cloud.tencent.com/document/product/551/35017) | [CAM 授权](https://cloud.tencent.com/document/product/551)
 
 **火山引擎：**
 - [机器翻译文档](https://docs.volcengine.com/docs/4640/62099) | [文本翻译 API](https://docs.volcengine.com/docs/4640/65067) | [产品计费](https://docs.volcengine.com/docs/4640/68515)

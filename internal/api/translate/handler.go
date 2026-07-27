@@ -3,6 +3,7 @@ package translate
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"FreeTranslate/internal/platform/gwe"
@@ -12,6 +13,47 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+// normalizeLang 将前端常用语言码归一化为各 Provider 通用格式
+// 腾讯云、火山引擎不支持 zh-CN/en-US 这类带区域的代码，统一转为两字符码
+func normalizeLang(l string) string {
+	switch strings.ToLower(l) {
+	case "zh-cn", "zh-tw", "zh-hk":
+		return "zh"
+	case "en-us", "en-gb":
+		return "en"
+	case "ja-jp":
+		return "ja"
+	case "ko-kr":
+		return "ko"
+	case "fr-fr":
+		return "fr"
+	case "de-de":
+		return "de"
+	case "es-es":
+		return "es"
+	case "pt-pt":
+		return "pt"
+	case "it-it":
+		return "it"
+	case "ru-ru":
+		return "ru"
+	case "ar-ae":
+		return "ar"
+	case "th-th":
+		return "th"
+	case "vi-vn":
+		return "vi"
+	case "id-id":
+		return "id"
+	case "ms-my":
+		return "ms"
+	case "tr-tr":
+		return "tr"
+	default:
+		return l
+	}
+}
 
 // TranslateRequest 翻译请求
 type TranslateRequest struct {
@@ -74,18 +116,22 @@ func (h *Handler) Translate(c *gin.Context) {
 		return
 	}
 
+	// 归一化语言码（腾讯云、火山引擎不支持 zh-CN 格式）
+	srcLang := normalizeLang(req.SourceLang)
+	tgtLang := normalizeLang(req.TargetLang)
+
 	// 执行翻译
 	result, err := p.Translate(c.Request.Context(), provider.Request{
 		Text:       req.Text,
-		SourceLang: req.SourceLang,
-		TargetLang: req.TargetLang,
+		SourceLang: srcLang,
+		TargetLang: tgtLang,
 	})
 
 	if err != nil {
 		logs.Logger.Error("翻译失败",
 			zap.String("provider", p.Name()),
-			zap.String("source_lang", req.SourceLang),
-			zap.String("target_lang", req.TargetLang),
+			zap.String("source_lang", srcLang),
+			zap.String("target_lang", tgtLang),
 			zap.Int("char_count", charCount),
 			zap.String("error", err.Error()),
 		)

@@ -9,7 +9,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/godotenv/godotenv v1.5.2
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.142
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/mps v1.3.142
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tmt v1.1.27
 	github.com/volcengine/volcengine-go-sdk v1.2.44
 	go.uber.org/zap v1.28.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

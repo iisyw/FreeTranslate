@@ -44,11 +44,17 @@ func (c *Client) MaxTextLen() int { return c.maxTextLen }
 func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider.Result, error) {
 	input := &alimt20181012.TranslateRequest{
 		SourceText:     tea.String(req.Text),
-		SourceLanguage: tea.String(req.SourceLang),
 		TargetLanguage: tea.String(req.TargetLang),
 		FormatType:     tea.String("text"),
 		Scene:          tea.String(c.scene),
 	}
+
+	// source_lang 为空时传 auto
+	srcLang := req.SourceLang
+	if srcLang == "" {
+		srcLang = "auto"
+	}
+	input.SourceLanguage = tea.String(srcLang)
 
 	resp, err := c.client.Translate(input)
 	if err != nil {
@@ -86,9 +92,13 @@ func (c *Client) TranslateBatch(ctx context.Context, reqs []provider.Request) ([
 			errs[i] = errors.New("text exceeds maximum length of 2000 characters")
 			continue
 		}
+		srcLang := req.SourceLang
+		if srcLang == "" {
+			srcLang = "auto"
+		}
 		input := &alimt20181012.TranslateRequest{
 			SourceText:     tea.String(req.Text),
-			SourceLanguage: tea.String(req.SourceLang),
+			SourceLanguage: tea.String(srcLang),
 			TargetLanguage: tea.String(req.TargetLang),
 			FormatType:     tea.String("text"),
 			Scene:          tea.String(c.scene),

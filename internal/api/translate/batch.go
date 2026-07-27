@@ -73,13 +73,13 @@ func (h *Handler) TranslateBatch(c *gin.Context) {
 		return
 	}
 
-	// 构造批量请求
+	// 构造批量请求（归一化语言码）
 	reqs := make([]provider.Request, len(req.Texts))
 	for i, item := range req.Texts {
 		reqs[i] = provider.Request{
 			Text:       item.Text,
-			SourceLang: item.SourceLang,
-			TargetLang: item.TargetLang,
+			SourceLang: normalizeLang(item.SourceLang),
+			TargetLang: normalizeLang(item.TargetLang),
 		}
 	}
 
