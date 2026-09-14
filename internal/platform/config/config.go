@@ -15,7 +15,7 @@ type AppConfig struct {
 	APIToken string
 
 	// 腾讯云
-	TencentEnabled      bool
+	TencentEnabled        bool
 	TencentCloudSecretId  string
 	TencentCloudSecretKey string
 
@@ -51,7 +51,7 @@ func Init() {
 		GinMode:  getEnv("GIN_MODE", "debug"),
 		APIToken: getEnv("API_TOKEN", ""),
 
-		TencentEnabled:      tencentEnabled == "true" && tencentId != "" && tencentKey != "",
+		TencentEnabled:        tencentEnabled == "true" && tencentId != "" && tencentKey != "",
 		TencentCloudSecretId:  tencentId,
 		TencentCloudSecretKey: tencentKey,
 

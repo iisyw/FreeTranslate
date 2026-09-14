@@ -1,7 +1,6 @@
 package translate
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -13,47 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
-
-// normalizeLang 将前端常用语言码归一化为各 Provider 通用格式
-// 腾讯云、火山引擎不支持 zh-CN/en-US 这类带区域的代码，统一转为两字符码
-func normalizeLang(l string) string {
-	switch strings.ToLower(l) {
-	case "zh-cn", "zh-tw", "zh-hk":
-		return "zh"
-	case "en-us", "en-gb":
-		return "en"
-	case "ja-jp":
-		return "ja"
-	case "ko-kr":
-		return "ko"
-	case "fr-fr":
-		return "fr"
-	case "de-de":
-		return "de"
-	case "es-es":
-		return "es"
-	case "pt-pt":
-		return "pt"
-	case "it-it":
-		return "it"
-	case "ru-ru":
-		return "ru"
-	case "ar-ae":
-		return "ar"
-	case "th-th":
-		return "th"
-	case "vi-vn":
-		return "vi"
-	case "id-id":
-		return "id"
-	case "ms-my":
-		return "ms"
-	case "tr-tr":
-		return "tr"
-	default:
-		return l
-	}
-}
 
 // TranslateRequest 翻译请求
 type TranslateRequest struct {
@@ -86,86 +44,105 @@ func (h *Handler) Translate(c *gin.Context) {
 		return
 	}
 
-	if req.TargetLang == "" {
+	if strings.TrimSpace(req.TargetLang) == "" {
 		gwe.ErrorJSON(c, http.StatusBadRequest, 40001, "target_lang is required")
 		return
 	}
 
-	// 解析 provider
+	srcLang, err := provider.NormalizeLanguage(req.SourceLang, true)
+	if err != nil {
+		gwe.ErrorJSONWithType(c, http.StatusBadRequest, 40011, string(provider.ErrorUnsupportedLanguage), err.Error(), "", false, "")
+		return
+	}
+	tgtLang, err := provider.NormalizeLanguage(req.TargetLang, false)
+	if err != nil {
+		gwe.ErrorJSONWithType(c, http.StatusBadRequest, 40011, string(provider.ErrorUnsupportedLanguage), err.Error(), "", false, "")
+		return
+	}
+
 	pName := req.Provider
 	if pName == "" {
 		pName = "auto"
 	}
-
-	p, err := provider.GetOrDefault(pName)
-	if err != nil {
-		// 未知 provider
-		if pName != "auto" {
+	if pName != "auto" {
+		if _, err := provider.Candidates(pName); err != nil {
 			gwe.ErrorJSON(c, http.StatusBadRequest, 40010, "unknown provider: "+pName+", available: "+joinProviders())
 			return
 		}
-		gwe.ErrorJSON(c, http.StatusServiceUnavailable, 50300, "no translation provider available")
-		return
 	}
-
-	// 检查文本长度
-	charCount := utf8.RuneCountInString(req.Text)
-	if charCount > p.MaxTextLen() {
-		gwe.ErrorJSON(c, http.StatusUnprocessableEntity, 42200,
-			fmt.Sprintf("text exceeds maximum length of %d characters", p.MaxTextLen()))
-		return
-	}
-
-	// 归一化语言码（腾讯云、火山引擎不支持 zh-CN 格式）
-	srcLang := normalizeLang(req.SourceLang)
-	tgtLang := normalizeLang(req.TargetLang)
-
-	// 执行翻译
-	result, err := p.Translate(c.Request.Context(), provider.Request{
+	result, usedProvider, err := translateWithFailover(c.Request.Context(), provider.Request{
 		Text:       req.Text,
 		SourceLang: srcLang,
 		TargetLang: tgtLang,
-	})
-
+	}, pName)
+	charCount := utf8.RuneCountInString(req.Text)
 	if err != nil {
-		logs.Logger.Error("翻译失败",
-			zap.String("provider", p.Name()),
-			zap.String("source_lang", srcLang),
-			zap.String("target_lang", tgtLang),
-			zap.Int("char_count", charCount),
-			zap.String("error", err.Error()),
-		)
-
-		if p.IsTextTooLongError(err) {
-			gwe.ErrorJSON(c, http.StatusUnprocessableEntity, 42200, "text exceeds maximum length")
-			return
+		if logs.Logger != nil {
+			logs.Logger.Error("翻译失败",
+				zap.String("provider", usedProvider),
+				zap.String("source_lang", srcLang),
+				zap.String("target_lang", tgtLang),
+				zap.Int("char_count", charCount),
+				zap.String("error", formatProviderError(err)),
+			)
 		}
-
-		// 透传提供商错误
-		gwe.ErrorJSON(c, http.StatusInternalServerError, 50000, err.Error())
+		writeProviderError(c, err, usedProvider)
 		return
 	}
 
-	// 成功日志
-	logs.Logger.Info("翻译成功",
-		zap.String("provider", p.Name()),
-		zap.String("source_lang", result.SourceLang),
-		zap.String("target_lang", result.TargetLang),
-		zap.Int("char_count", charCount),
-	)
+	if logs.Logger != nil {
+		logs.Logger.Info("翻译成功",
+			zap.String("provider", usedProvider),
+			zap.String("source_lang", result.SourceLang),
+			zap.String("target_lang", result.TargetLang),
+			zap.Int("char_count", charCount),
+		)
+	}
 
 	gwe.SuccessJSON(c, TranslateData{
 		Text:       result.Text,
 		SourceLang: result.SourceLang,
 		TargetLang: result.TargetLang,
-		Provider:   p.Name(),
+		Provider:   usedProvider,
 	})
+}
+
+func writeProviderError(c *gin.Context, err error, providerName string) {
+	providerErr := provider.AsProviderError(err)
+	if providerErr == nil {
+		gwe.ErrorJSONWithType(c, http.StatusBadGateway, 50200, string(provider.ErrorTranslationFailed), "翻译服务处理失败", providerName, false, "")
+		return
+	}
+
+	status := http.StatusBadGateway
+	code := 50200
+	switch providerErr.Kind {
+	case provider.ErrorInvalidArgument, provider.ErrorUnsupportedLanguage:
+		status = http.StatusBadRequest
+		code = 40011
+	case provider.ErrorTextTooLong:
+		status = http.StatusUnprocessableEntity
+		code = 42200
+	case provider.ErrorTimeout:
+		status = http.StatusGatewayTimeout
+		code = 50400
+	case provider.ErrorRateLimited:
+		status = http.StatusTooManyRequests
+		code = 42900
+	case provider.ErrorAllProvidersFailed, provider.ErrorUnavailable:
+		status = http.StatusServiceUnavailable
+		code = 50300
+	}
+	if providerName == "" {
+		providerName = providerErr.ProviderName
+	}
+	gwe.ErrorJSONWithType(c, status, code, string(providerErr.Kind), providerErr.Message, providerName, providerErr.Retryable, providerErr.RequestID)
 }
 
 func joinProviders() string {
 	names := provider.List()
 	if len(names) == 0 {
-		return "tencent, volcano"
+		return "tencent, volcano, alibaba-general"
 	}
 	result := ""
 	for i, n := range names {

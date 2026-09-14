@@ -3,6 +3,7 @@ package volcano
 import (
 	"context"
 	"errors"
+	"unicode/utf8"
 
 	"FreeTranslate/internal/provider"
 
@@ -32,18 +33,27 @@ func (c *Client) Name() string    { return name }
 func (c *Client) MaxTextLen() int { return 5000 }
 
 func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider.Result, error) {
+	if utf8.RuneCountInString(req.Text) > c.MaxTextLen() {
+		return nil, provider.NewTextTooLongError(name, c.MaxTextLen())
+	}
+
+	mapped, err := provider.MapRequest(name, req)
+	if err != nil {
+		return nil, classifyCode("UnsupportedLanguage", err.Error(), "", err)
+	}
+
 	textList := []*string{volcengine.String(req.Text)}
 	input := &translate20250301.TranslateTextInput{
 		TextList:       textList,
-		TargetLanguage: volcengine.String(req.TargetLang),
+		TargetLanguage: volcengine.String(mapped.TargetLang),
 	}
-	if req.SourceLang != "" {
-		input.SourceLanguage = volcengine.String(req.SourceLang)
+	if mapped.SourceLang != "" {
+		input.SourceLanguage = volcengine.String(mapped.SourceLang)
 	}
 
 	output, err := c.client.TranslateTextWithContext(ctx, input)
 	if err != nil {
-		return nil, err
+		return nil, classifyError(err)
 	}
 
 	if output == nil || len(output.TranslationList) == 0 {
@@ -56,7 +66,7 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 		TargetLang: req.TargetLang,
 	}
 	if trans.DetectedSourceLanguage != nil && *trans.DetectedSourceLanguage != "" {
-		result.SourceLang = *trans.DetectedSourceLanguage
+		result.SourceLang = provider.CanonicalLanguage(name, *trans.DetectedSourceLanguage)
 	} else if req.SourceLang != "" {
 		result.SourceLang = req.SourceLang
 	} else {
@@ -70,60 +80,17 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 }
 
 func (c *Client) IsTextTooLongError(err error) bool {
-	return false
+	providerErr := provider.AsProviderError(err)
+	return providerErr != nil && providerErr.Kind == provider.ErrorTextTooLong
 }
 
-// TranslateBatch 火山引擎支持真正的批量翻译，TextList 最多 16 条
-// 每条错误单独返回，不阻塞其他
+// TranslateBatch translates each item independently so errors can be retried by the dispatcher.
 func (c *Client) TranslateBatch(ctx context.Context, reqs []provider.Request) ([]*provider.Result, []error) {
-	// 火山引擎每次最多 16 条，超过则截断
-	const maxBatch = 16
-
 	results := make([]*provider.Result, len(reqs))
 	errs := make([]error, len(reqs))
-
 	for i, req := range reqs {
-		if len(req.Text) > c.MaxTextLen() {
-			errs[i] = errors.New("text exceeds maximum length")
-			continue
-		}
-		textList := []*string{volcengine.String(req.Text)}
-		input := &translate20250301.TranslateTextInput{
-			TextList:       textList,
-			TargetLanguage: volcengine.String(req.TargetLang),
-		}
-		if req.SourceLang != "" {
-			input.SourceLanguage = volcengine.String(req.SourceLang)
-		}
-
-		output, err := c.client.TranslateTextWithContext(ctx, input)
-		if err != nil {
-			errs[i] = err
-			continue
-		}
-		if output == nil || len(output.TranslationList) == 0 {
-			errs[i] = errors.New("empty translation result")
-			continue
-		}
-
-		trans := output.TranslationList[0]
-		result := &provider.Result{
-			Text:       volcengine.StringValue(trans.Translation),
-			TargetLang: req.TargetLang,
-		}
-		if trans.DetectedSourceLanguage != nil && *trans.DetectedSourceLanguage != "" {
-			result.SourceLang = *trans.DetectedSourceLanguage
-		} else if req.SourceLang != "" {
-			result.SourceLang = req.SourceLang
-		} else {
-			result.SourceLang = "auto"
-		}
-		if output.Metadata != nil && output.Metadata.RequestId != "" {
-			result.RequestId = output.Metadata.RequestId
-		}
-		results[i] = result
+		results[i], errs[i] = c.Translate(ctx, req)
 	}
-
 	return results, errs
 }
 

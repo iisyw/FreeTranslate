@@ -8,6 +8,8 @@ import (
 // registry 全局 provider 注册表
 var (
 	registry = make(map[string]Provider)
+	order    []string
+	nextAuto uint64
 	mu       sync.RWMutex
 )
 
@@ -20,6 +22,9 @@ func Register(p Provider) {
 		panic("provider: cannot register provider with empty name")
 	}
 	mu.Lock()
+	if _, exists := registry[p.Name()]; !exists {
+		order = append(order, p.Name())
+	}
 	registry[p.Name()] = p
 	mu.Unlock()
 }
@@ -36,33 +41,51 @@ func Get(name string) (Provider, bool) {
 func List() []string {
 	mu.RLock()
 	defer mu.RUnlock()
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
+	names := make([]string, len(order))
+	copy(names, order)
 	return names
 }
 
-// GetOrDefault 根据名称获取 provider，name 为空或 "auto" 时返回第一个已注册的
-func GetOrDefault(name string) (Provider, error) {
-	if name == "auto" || name == "" {
-		mu.RLock()
-		defer mu.RUnlock()
-		for _, p := range registry {
-			return p, nil
+// Candidates returns providers in the order used for one request.
+// Auto requests start at a round-robin position and then try the remaining providers.
+func Candidates(name string) ([]Provider, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if name != "auto" && name != "" {
+		p, ok := registry[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown provider: %s", name)
 		}
+		return []Provider{p}, nil
+	}
+	if len(order) == 0 {
 		return nil, fmt.Errorf("no provider registered")
 	}
-	p, ok := Get(name)
-	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", name)
+
+	start := int(nextAuto % uint64(len(order)))
+	nextAuto++
+	providers := make([]Provider, 0, len(order))
+	for i := 0; i < len(order); i++ {
+		providers = append(providers, registry[order[(start+i)%len(order)]])
 	}
-	return p, nil
+	return providers, nil
+}
+
+// GetOrDefault returns the first candidate and is kept for callers that only need one provider.
+func GetOrDefault(name string) (Provider, error) {
+	providers, err := Candidates(name)
+	if err != nil {
+		return nil, err
+	}
+	return providers[0], nil
 }
 
 // Clear 清除注册表（仅用于测试）
 func Clear() {
 	mu.Lock()
 	registry = make(map[string]Provider)
+	order = nil
+	nextAuto = 0
 	mu.Unlock()
 }

@@ -31,12 +31,15 @@ type BatchTranslateData struct {
 
 // BatchResult 单条翻译结果
 type BatchResult struct {
-	Index     int    `json:"index"`
-	Text      string `json:"text"`
+	Index      int    `json:"index"`
+	Text       string `json:"text"`
 	SourceLang string `json:"source_lang"`
 	TargetLang string `json:"target_lang"`
-	Provider  string `json:"provider"`
-	Error     string `json:"error,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	Error      string `json:"error,omitempty"`
+	ErrorType  string `json:"error_type,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
 }
 
 // TranslateBatch 批量翻译接口
@@ -51,20 +54,16 @@ func (h *Handler) TranslateBatch(c *gin.Context) {
 		gwe.ErrorJSON(c, http.StatusBadRequest, 40002, "texts cannot be empty")
 		return
 	}
-
 	if len(req.Texts) > 100 {
 		gwe.ErrorJSON(c, http.StatusBadRequest, 40003, "texts cannot exceed 100 items")
 		return
 	}
 
-	// 解析 provider
 	pName := req.Provider
 	if pName == "" {
 		pName = "auto"
 	}
-
-	p, err := provider.GetOrDefault(pName)
-	if err != nil {
+	if _, err := provider.Candidates(pName); err != nil {
 		if pName != "auto" {
 			gwe.ErrorJSON(c, http.StatusBadRequest, 40010, "unknown provider: "+pName+", available: "+joinProviders())
 			return
@@ -73,46 +72,74 @@ func (h *Handler) TranslateBatch(c *gin.Context) {
 		return
 	}
 
-	// 构造批量请求（归一化语言码）
-	reqs := make([]provider.Request, len(req.Texts))
+	reqs := make([]provider.Request, 0, len(req.Texts))
+	indexes := make([]int, 0, len(req.Texts))
+	errs := make([]error, len(req.Texts))
 	for i, item := range req.Texts {
-		reqs[i] = provider.Request{
+		srcLang, err := provider.NormalizeLanguage(item.SourceLang, true)
+		if err != nil {
+			errs[i] = provider.NewProviderErrorWithPolicy("", provider.ErrorUnsupportedLanguage, "", err.Error(), "", "", false, false, err)
+			continue
+		}
+		tgtLang, err := provider.NormalizeLanguage(item.TargetLang, false)
+		if err != nil {
+			errs[i] = provider.NewProviderErrorWithPolicy("", provider.ErrorUnsupportedLanguage, "", err.Error(), "", "", false, false, err)
+			continue
+		}
+		reqs = append(reqs, provider.Request{
 			Text:       item.Text,
-			SourceLang: normalizeLang(item.SourceLang),
-			TargetLang: normalizeLang(item.TargetLang),
+			SourceLang: srcLang,
+			TargetLang: tgtLang,
+		})
+		indexes = append(indexes, i)
+	}
+
+	batchResults, batchErrs, usedProviders := translateBatchWithFailover(c.Request.Context(), reqs, pName)
+	for i, originalIndex := range indexes {
+		if batchErrs[i] != nil {
+			errs[originalIndex] = batchErrs[i]
 		}
 	}
 
-	// 调用批量翻译
-	results, errs := p.TranslateBatch(c.Request.Context(), reqs)
-
-	// 整理结果
 	output := make([]BatchResult, len(req.Texts))
 	for i := range req.Texts {
-		output[i] = BatchResult{
-			Index: i,
-		}
+		output[i] = BatchResult{Index: i}
 		if errs[i] != nil {
-			output[i].Error = errs[i].Error()
-			logs.Logger.Warn("批量翻译单条失败",
-				zap.Int("index", i),
-				zap.String("provider", p.Name()),
-				zap.String("error", errs[i].Error()),
-			)
-		} else if results[i] != nil {
-			output[i].Text = results[i].Text
-			output[i].SourceLang = results[i].SourceLang
-			output[i].TargetLang = results[i].TargetLang
-			output[i].Provider = p.Name()
+			output[i].Error = formatProviderError(errs[i])
+			if providerErr := provider.AsProviderError(errs[i]); providerErr != nil {
+				output[i].Provider = providerErr.ProviderName
+				output[i].ErrorType = string(providerErr.Kind)
+				output[i].Retryable = providerErr.Retryable
+				output[i].RequestID = providerErr.RequestID
+			}
+			if logs.Logger != nil {
+				logs.Logger.Warn("批量翻译单条失败",
+					zap.Int("index", i),
+					zap.String("provider", providerNameAt(usedProviders, indexes, i)),
+					zap.String("error", output[i].Error),
+				)
+			}
+			continue
 		}
+		resultIndex := indexOf(indexes, i)
+		if resultIndex < 0 || resultIndex >= len(batchResults) || batchResults[resultIndex] == nil {
+			output[i].Error = "翻译服务未返回结果"
+			continue
+		}
+		result := batchResults[resultIndex]
+		output[i].Text = result.Text
+		output[i].SourceLang = result.SourceLang
+		output[i].TargetLang = result.TargetLang
+		output[i].Provider = usedProviders[resultIndex]
 	}
 
-	logs.Logger.Info("批量翻译完成",
-		zap.String("provider", p.Name()),
-		zap.Int("total", len(req.Texts)),
-		zap.Int("failed", countErrors(errs)),
-	)
-
+	if logs.Logger != nil {
+		logs.Logger.Info("批量翻译完成",
+			zap.String("provider", pName),
+			zap.Int("total", len(req.Texts)),
+			zap.Int("failed", countErrors(errs)),
+		)
+	}
 	gwe.SuccessJSON(c, BatchTranslateData{Results: output})
 }
 
@@ -124,4 +151,21 @@ func countErrors(errs []error) int {
 		}
 	}
 	return n
+}
+
+func indexOf(indexes []int, value int) int {
+	for i, index := range indexes {
+		if index == value {
+			return i
+		}
+	}
+	return -1
+}
+
+func providerNameAt(usedProviders []string, indexes []int, originalIndex int) string {
+	index := indexOf(indexes, originalIndex)
+	if index >= 0 && index < len(usedProviders) {
+		return usedProviders[index]
+	}
+	return ""
 }

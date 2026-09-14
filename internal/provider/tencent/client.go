@@ -3,12 +3,11 @@ package tencent
 import (
 	"context"
 	"errors"
-	"strings"
+	"unicode/utf8"
 
 	"FreeTranslate/internal/provider"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
-	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	tmt "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tmt/v20180321"
 )
@@ -35,11 +34,16 @@ func (c *Client) Name() string    { return name }
 func (c *Client) MaxTextLen() int { return 2000 }
 
 func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider.Result, error) {
-	if len(req.Text) > c.MaxTextLen() {
-		return nil, errors.New("text exceeds maximum length")
+	if utf8.RuneCountInString(req.Text) > c.MaxTextLen() {
+		return nil, provider.NewTextTooLongError(name, c.MaxTextLen())
 	}
 
-	sourceLang := req.SourceLang
+	mapped, err := provider.MapRequest(name, req)
+	if err != nil {
+		return nil, classifyCode("UnsupportedOperation.UnsupportedLanguage", err.Error(), "", err)
+	}
+
+	sourceLang := mapped.SourceLang
 	if sourceLang == "" {
 		sourceLang = "auto"
 	}
@@ -47,16 +51,16 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 	tmtReq := tmt.NewTextTranslateRequest()
 	tmtReq.SourceText = &req.Text
 	tmtReq.Source = &sourceLang
-	tmtReq.Target = &req.TargetLang
+	tmtReq.Target = &mapped.TargetLang
 	tmtReq.ProjectId = common.Int64Ptr(0)
 
 	resp, err := c.client.TextTranslateWithContext(ctx, tmtReq)
 	if err != nil {
-		return nil, parseError(err)
+		return nil, classifyError(err)
 	}
 
-	if resp.Response == nil {
-		return nil, errors.New("empty response from Tencent Cloud TMT")
+	if resp == nil || resp.Response == nil {
+		return nil, classifyError(errors.New("empty response from Tencent Cloud TMT"))
 	}
 
 	result := &provider.Result{}
@@ -76,11 +80,8 @@ func (c *Client) Translate(ctx context.Context, req provider.Request) (*provider
 }
 
 func (c *Client) IsTextTooLongError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "TextTooLong") ||
-		strings.Contains(err.Error(), "UnsupportedOperation")
+	providerErr := provider.AsProviderError(err)
+	return providerErr != nil && providerErr.Kind == provider.ErrorTextTooLong
 }
 
 // TranslateBatch 逐条调用 Translate
@@ -91,13 +92,6 @@ func (c *Client) TranslateBatch(ctx context.Context, reqs []provider.Request) ([
 		results[i], errs[i] = c.Translate(ctx, req)
 	}
 	return results, errs
-}
-
-func parseError(err error) error {
-	if sdkErr, ok := err.(*tcerr.TencentCloudSDKError); ok {
-		return errors.New(sdkErr.Code + ": " + sdkErr.Message)
-	}
-	return err
 }
 
 // Ensure Client implements provider.Provider
